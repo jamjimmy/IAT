@@ -2,7 +2,7 @@ dataset/classification/carclass/*
 dataset/classification/carclass/*
 dataset/classification/checkpoints/*
 outputs_old/*
-outputs/* 
+outputs
 src/loaders/__pycache__/*
 src/loaders/__pycache__/*
 ShareGPT4V/*
