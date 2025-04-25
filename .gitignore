@@ -1,0 +1,17 @@
+dataset/classification/carclass/*
+dataset/classification/carclass/*
+dataset/classification/checkpoints/*
+outputs_old/*
+outputs/* 
+src/loaders/__pycache__/*
+src/loaders/__pycache__/*
+ShareGPT4V/*
+json/*
+wandb/*
+**/__pycache__/*
+train_result/*
+dataset/classification/test_image/*
+dataset/classification/RN50.pt
+ckpts/*
+Janus
+txt/*

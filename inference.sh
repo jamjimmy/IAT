@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=1,2,3,4 accelerate launch --config_file /Node11_nvme/jiangzj/IAT/accelerate_lora.yaml --multi_gpu --mixed_precision bf16  --num_processes 12  inference_lora_jzj.py

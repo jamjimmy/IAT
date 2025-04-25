@@ -1,0 +1,149 @@
+#!/bin/bash
+
+set -e
+GREEN="\033[32m"
+export HF_ENDPOINT=https://hf-mirror.com
+# export WANDB_MODE="offline"
+export HF_HOME="./huggingface_home"
+pretrain_path="../diffusers/FLUX.1-controlnet-lineart-promeai"
+export WANDB_API_KEY="154d2536f85d4b2adc51e83c9dfccac4ca62d214"
+for num in {3..100}
+do
+
+    OUTPUT_DIR="outputs/outputs_zhipu/$num"
+    SKETCH_DIR="outputs/outputs_zhipu_sketch/$num"
+    HUSH=$(date)
+    echo $OUTPUT_DIR
+    echo $SKETCH_DIR
+    # while [ ! -f "outputs/outputs_zhipu/$num/caption.json" ]; do
+    #     echo "文件 "outputs/outputs_zhipu/$num/caption.json" 不存在，休眠 5 分钟..."
+    #     sleep 300  # 休眠 300 秒（5 分钟）
+    # done
+    
+    if [ "$num" -eq 3 ]; then
+        
+        CUDA_VISIBLE_DEVICES=0 python3 train_new.py \
+            --pretrained_model_name_or_path="/data/Tsinghua/Share/HF_HOME/hub/models--black-forest-labs--FLUX.1-dev/snapshots/0ef5fff789c832c5c7f4e127f94c8b54bbcced44/" \
+            --jsonl_for_train="outputs/train.json" \
+            --conditioning_image_column=conditioning_image \
+            --image_column=image \
+            --caption_column=caption \
+            --output_dir="outputs/tmp_ckpt" \
+            --mixed_precision="bf16" \
+            --resolution=512 \
+            --learning_rate=1e-5 \
+            --max_train_steps=0 \
+            --checkpointing_steps=1000 \
+            --train_batch_size=1 \
+            --gradient_accumulation_steps=8 \
+            --report_to="wandb" \
+            --num_double_layers=4 \
+            --num_single_layers=0 \
+            --seed=42 \
+            --hash="$HUSH"
+            
+        echo "22222222222222222222222222222222222"
+        CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 accelerate  launch  --main_process_port 15433 --config_file "./accelerate_config_zero3.yaml" --num_processes 8  train.py \
+            --pretrained_model_name_or_path="/data/Tsinghua/Share/HF_HOME/hub/models--black-forest-labs--FLUX.1-dev/snapshots/0ef5fff789c832c5c7f4e127f94c8b54bbcced44/" \
+            --jsonl_for_train="outputs/train.json" \
+            --conditioning_image_column=conditioning_image \
+            --image_column=image \
+            --caption_column=caption \
+            --output_dir="outputs/new_zhipu_ckpt_debug" \
+            --mixed_precision="bf16" \
+            --resolution=512 \
+            --learning_rate=1e-5 \
+            --max_train_steps=10 \
+            --checkpointing_steps=10 \
+            --train_batch_size=1 \
+            --gradient_accumulation_steps=8 \
+            --report_to="wandb" \
+            --num_double_layers=4 \
+            --num_single_layers=0 \
+            --seed=42 \
+            --controlnet_model_name_or_path="outputs/new_zhipu_ckpt/" \
+            --hash="$HUSH"
+        echo "333333333333"
+        CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 accelerate  launch  --main_process_port 15433 --config_file "./accelerate_config_zero3.yaml" --num_processes 8  train.py \
+            --pretrained_model_name_or_path="/data/Tsinghua/Share/HF_HOME/hub/models--black-forest-labs--FLUX.1-dev/snapshots/0ef5fff789c832c5c7f4e127f94c8b54bbcced44/" \
+            --jsonl_for_train="outputs/train.json" \
+            --conditioning_image_column=conditioning_image \
+            --image_column=image \
+            --caption_column=caption \
+            --output_dir="outputs/new_zhipu_ckpt_debug" \
+            --mixed_precision="bf16" \
+            --resolution=512 \
+            --learning_rate=1e-5 \
+            --max_train_steps=20 \
+            --checkpointing_steps=10 \
+            --train_batch_size=1 \
+            --gradient_accumulation_steps=8 \
+            --report_to="wandb" \
+            --num_double_layers=4 \
+            --num_single_layers=0 \
+            --seed=42 \
+            --resume_from_checkpoint="latest" \
+            --hash="$HUSH"
+    else
+        echo -e "STEP1:正在生成训练图像"
+    #     CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 accelerate launch --config_file accelerate_lora.yaml --multi_gpu --mixed_precision bf16  --num_processes 16  inference_lora_janus.py  $OUTPUT_DIR
+        
+    #     echo -e "STEP2:正在生成训练线稿"
+    #     python dataset/sketch_src/sketch_parallel.py $OUTPUT_DIR $SKETCH_DIR
+
+    #     echo -e "STEP3:正在生成训练json"
+    #     python tmp/generatejson.py $OUTPUT_DIR $SKETCH_DIR
+
+    #     CUDA_VISIBLE_DEVICES=0 python3 train_new.py \
+    #         --pretrained_model_name_or_path="/data/Tsinghua/Share/HF_HOME/hub/models--black-forest-labs--FLUX.1-dev/snapshots/0ef5fff789c832c5c7f4e127f94c8b54bbcced44/" \
+    #         --jsonl_for_train="outputs/train.json" \
+    #         --conditioning_image_column=conditioning_image \
+    #         --image_column=image \
+    #         --caption_column=caption \
+    #         --output_dir="outputs/tmp_ckpt" \
+    #         --mixed_precision="bf16" \
+    #         --resolution=512 \
+    #         --learning_rate=1e-5 \
+    #         --max_train_steps=0 \
+    #         --checkpointing_steps=1000 \
+    #         --train_batch_size=1 \
+    #         --gradient_accumulation_steps=8 \
+    #         --report_to="wandb" \
+    #         --num_double_layers=4 \
+    #         --num_single_layers=0 \
+    #         --seed=42 \
+    #         --hash="$HUSH"
+
+        if [ ! -f outputs/train.json ]; then
+            echo "文件 outputs/train.json 不存在，脚本结束。"
+            exit 1  # 退出脚本，返回状态码 1 表示异常退出
+        fi
+    #     CUDA_VISIBLE_DEVICES=0 python3 train_controlnet_flux.py
+
+    #     CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 accelerate  launch  --main_process_port 15433 --config_file "./accelerate_config_zero3.yaml" --num_processes 8  train.py \
+    #         --pretrained_model_name_or_path="/data/Tsinghua/Share/HF_HOME/hub/models--black-forest-labs--FLUX.1-dev/snapshots/0ef5fff789c832c5c7f4e127f94c8b54bbcced44/" \
+    #         --jsonl_for_train="outputs/train.json" \
+    #         --conditioning_image_column=conditioning_image \
+    #         --image_column=image \
+    #         --caption_column=caption \
+    #         --output_dir="outputs/new_zhipu_ckpt" \
+    #         --mixed_precision="bf16" \
+    #         --resolution=512 \
+    #         --learning_rate=1e-5 \
+    #         --max_train_steps=1001 \
+    #         --checkpointing_steps=1000 \
+    #         --train_batch_size=1 \
+    #         --gradient_accumulation_steps=8 \
+    #         --report_to="wandb" \
+    #         --num_double_layers=4 \
+    #         --num_single_layers=0 \
+    #         --seed=42 \
+    #         --resume_from_checkpoint="latest" \
+            #   --hash="$HUSH"
+    
+    fi
+    
+    # rm -r ./huggingface_home/*
+    # rm -r outputs/train.json
+done
+# --max_train_steps=$(expr "$((num-1))" \* 1000) \

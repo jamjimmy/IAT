@@ -1,0 +1,123 @@
+import os
+from PIL import Image
+import numpy as np
+import clip
+from loguru import logger
+from torch.utils.data import Dataset, DataLoader, ConcatDataset
+import torch.optim as optim
+from torch.optim import lr_scheduler
+import torch.nn as nn
+
+class YourDataset(Dataset):
+    def __init__(self, img_root, meta_root, is_train, preprocess):
+        self.img_root = img_root
+        self.meta_root = meta_root
+        self.train_set_file = os.path.join(meta_root, 'train.txt')
+        self.test_set_file = os.path.join(meta_root, 'test.txt')
+        self.is_train = is_train
+        self.img_process = preprocess
+        self.samples = []
+        self.sam_labels = []
+        self.read_file = self.train_set_file if is_train else self.test_set_file
+        with open(self.read_file, 'r') as f:
+            for line in f:
+                img_path = os.path.join(self.img_root, line.strip() + '.jpg')
+                label = line.strip().split('/')[0]
+                label = label.replace("_", " ")
+                label = "photo if " + label
+                self.samples.append(img_path)
+                self.sam_labels.append(label)
+        self.tokens = clip.tokenize(self.sam_labels)
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        img_path = self.samples[idx]
+        token = self.tokens[idx]
+        image = Image.open(img_path).convert('RGB')
+        image = self.img_process(image)
+        return image, token
+
+# 创建模型
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+net, preprocess = clip.load("RN50", device=device, jit=False)
+
+optimizer = optim.Adam(net.parameters(), lr=1e-6, betas=(0.9, 0.98), eps=1e-6, weight_decay=0.001)
+scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+
+# 创建损失函数
+loss_img = nn.CrossEntropyLoss()
+loss_txt = nn.CrossEntropyLoss()
+
+# 加载训练数据集
+train_dataset = YourDataset(img_root='car_class', meta_root='car_class', is_train=True, preprocess=preprocess)
+train_dataloader = DataLoader(train_dataset, batch_size=4, shuffle=True, num_workers=4, pin_memory=False)
+
+# 加载验证数据集
+val_dataset = YourDataset(img_root='car_class', meta_root='car_class', is_train=False, preprocess=preprocess)
+val_dataloader = DataLoader(val_dataset, batch_size=4, shuffle=False, num_workers=4, pin_memory=False)
+
+def evaluate(model, dataloader, device):
+    model.eval()
+    total_loss = 0
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for images, label_tokens in dataloader:
+            images = images.to(device)
+            label_tokens = label_tokens.to(device)
+            logits_per_image, logits_per_text = model(images, label_tokens)
+            ground_truth = torch.arange(len(images), dtype=torch.long, device=device)
+            loss = (loss_img(logits_per_image, ground_truth) + loss_txt(logits_per_text, ground_truth)) / 2
+            total_loss += loss.item()
+            _, preds = torch.max(logits_per_image, 1)
+            correct += torch.sum(preds == ground_truth).item()
+            total += len(images)
+    avg_loss = total_loss / len(dataloader)
+    accuracy = correct / total
+    return avg_loss, accuracy
+
+phase = "train"
+model_name = "car_classify"
+ckt_gap = 4
+for epoch in range(st, args.epoches):
+    scheduler.step()
+    net.train()
+    total_loss = 0
+    batch_num = 0
+    with torch.cuda.amp.autocast(enabled=True):
+        for images, label_tokens in train_dataloader:
+            images = images.to(device)
+            label_tokens = label_tokens.to(device)
+            batch_num += 1
+            optimizer.zero_grad()
+            with torch.set_grad_enabled(phase == "train"):
+                logits_per_image, logits_per_text = net(images, label_tokens)
+                ground_truth = torch.arange(len(images), dtype=torch.long, device=device)
+                cur_loss = (loss_img(logits_per_image, ground_truth) + loss_txt(logits_per_text, ground_truth)) / 2
+                total_loss += cur_loss
+                if phase == "train":
+                    cur_loss.backward()
+                    optimizer.step()
+                    if device != "cpu":
+                        clip.model.convert_weights(net)
+            if batch_num % 4 == 0:
+                logger.info('{} epoch:{} loss:{}'.format(phase, epoch, cur_loss))
+        epoch_loss = total_loss / len(train_dataloader)
+        torch.save(net.state_dict(), f"{model_name}_epoch_{epoch}.pth")
+        logger.info(f"weights_{epoch} saved")
+        if epoch % ckt_gap == 0:
+            checkpoint_path = f"{model_name}_ckt.pth"
+            checkpoint = {
+                'it': epoch,
+                'network': net.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'scheduler': scheduler.state_dict()}
+            torch.save(checkpoint, checkpoint_path)
+            logger.info(f"checkpoint_{epoch} saved")
+        logger.info('{} Loss: {:.4f}'.format(phase, epoch_loss))
+
+        # 评估模型
+        val_loss, val_accuracy = evaluate(net, val_dataloader, device)
+        logger.info('Validation Loss: {:.4f} Accuracy: {:.4f}'.format(val_loss, val_accuracy))
